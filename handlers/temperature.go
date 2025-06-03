@@ -40,6 +40,15 @@ func GetTemperature(w http.ResponseWriter, r *http.Request) {
 	limit := 10
 	offset := (page - 1) * limit
 
+	// Count total records
+	var totalRecords int
+	err := db.DB.QueryRow("SELECT COUNT(*) FROM temperature").Scan(&totalRecords)
+	if err != nil {
+		http.Error(w, "DB count error", http.StatusInternalServerError)
+		return
+	}
+
+	// Query paginated data
 	rows, err := db.DB.Query("SELECT id, temperature, date, time, location FROM temperature ORDER BY date DESC, time DESC LIMIT ? OFFSET ?", limit, offset)
 	if err != nil {
 		http.Error(w, "DB read error", http.StatusInternalServerError)
@@ -50,10 +59,22 @@ func GetTemperature(w http.ResponseWriter, r *http.Request) {
 	var results []models.Temperature
 	for rows.Next() {
 		var t models.Temperature
-		rows.Scan(&t.ID, &t.Temperature, &t.Date, &t.Time, &t.Location)
+		if err := rows.Scan(&t.ID, &t.Temperature, &t.Date, &t.Time, &t.Location); err != nil {
+			http.Error(w, "DB scan error", http.StatusInternalServerError)
+			return
+		}
 		results = append(results, t)
 	}
 
+	totalPages := (totalRecords + limit - 1) / limit // ceil
+
+	// Build response object
+	response := map[string]interface{}{
+		"data":        results,
+		"page":        page,
+		"total_pages": totalPages,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	json.NewEncoder(w).Encode(response)
 }
